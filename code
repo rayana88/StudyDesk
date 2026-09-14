@@ -1,0 +1,532 @@
+import json
+import tkinter as tk
+from tkinter import ttk, messagebox
+from datetime import datetime
+
+DATA_FILE = "study_tasks.json"
+
+
+class StudyDesk:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("StudyDesk")
+        self.root.geometry("1080x700")
+        self.root.configure(bg="#f4f6f8")
+
+        self.task_list = self.load_tasks()
+        self.priority_choice = tk.StringVar(value="Medium")
+        self.status_filter = tk.StringVar(value="All")
+        self.status_labels = []
+
+        self.setup_styles()
+        self.build_layout()
+        self.refresh_tasks()
+
+    def setup_styles(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        style.configure(
+            "Treeview",
+            rowheight=46,
+            font=("Arial", 13),
+            background="white",
+            fieldbackground="white"
+        )
+
+        style.configure(
+            "Treeview.Heading",
+            font=("Arial", 12, "bold"),
+            background="#e9eef5",
+            relief="flat"
+        )
+
+        style.map(
+            "Treeview.Heading",
+            background=[("active", "#e9eef5")]
+        )
+
+    def build_layout(self):
+        self.build_header()
+        self.build_stats()
+
+        main = tk.Frame(self.root, bg="#f4f6f8")
+        main.pack(fill="both", expand=True, padx=28, pady=(0, 25))
+
+        self.form = tk.Frame(main, bg="white", bd=1, relief="solid")
+        self.form.pack(side="left", fill="y", padx=(0, 14))
+
+        self.task_area = tk.Frame(main, bg="white", bd=1, relief="solid")
+        self.task_area.pack(side="left", fill="both", expand=True)
+
+        self.build_form()
+        self.build_tasks_section()
+
+    def build_header(self):
+        header = tk.Frame(self.root, bg="#f4f6f8")
+        header.pack(fill="x", padx=28, pady=(22, 10))
+
+        tk.Label(
+            header,
+            text="StudyDesk",
+            font=("Arial", 24, "bold"),
+            bg="#f4f6f8",
+            fg="#1f2937"
+        ).pack(side="left")
+
+        tk.Label(
+            header,
+            text="Keep track of assignments and deadlines",
+            font=("Arial", 10),
+            bg="#f4f6f8",
+            fg="#6b7280"
+        ).pack(side="left", padx=14, pady=(8, 0))
+
+    def build_stats(self):
+        stats = tk.Frame(self.root, bg="#f4f6f8")
+        stats.pack(fill="x", padx=28, pady=(4, 14))
+
+        self.total_label = self.make_stat_box(stats, "Total Tasks")
+        self.open_label = self.make_stat_box(stats, "Open")
+        self.completed_label = self.make_stat_box(stats, "Completed")
+        self.due_label = self.make_stat_box(stats, "Due Soon")
+
+    def make_stat_box(self, parent, title):
+        box = tk.Frame(parent, bg="white", bd=1, relief="solid")
+        box.pack(side="left", fill="x", expand=True, padx=5)
+
+        tk.Label(
+            box,
+            text=title,
+            font=("Arial", 9),
+            bg="white",
+            fg="#6b7280"
+        ).pack(anchor="w", padx=16, pady=(12, 2))
+
+        value = tk.Label(
+            box,
+            text="0",
+            font=("Arial", 20, "bold"),
+            bg="white",
+            fg="#1f2937"
+        )
+        value.pack(anchor="w", padx=16, pady=(0, 12))
+
+        return value
+
+    def build_form(self):
+        tk.Label(
+            self.form,
+            text="Add Task",
+            font=("Arial", 16, "bold"),
+            bg="white"
+        ).pack(anchor="w", padx=20, pady=(20, 16))
+
+        self.task_entry = self.add_text_box("Task")
+        self.course_entry = self.add_text_box("Course")
+        self.date_entry = self.add_text_box("Due date (YYYY-MM-DD)")
+
+        self.add_dropdown("Priority", self.priority_choice, ["Low", "Medium", "High"])
+
+        self.add_button("Add Task", self.add_task, "#111111", "white")
+        self.add_button("Mark Selected Complete", self.mark_complete, "#166534", "white")
+        self.add_button("Delete Selected", self.delete_task, "#fff1f2", "#b91c1c")
+        self.add_button("Reset All Tasks", self.reset_all_tasks, "#fff1f2", "#b91c1c")
+
+    def add_text_box(self, label_text):
+        tk.Label(
+            self.form,
+            text=label_text,
+            font=("Arial", 9, "bold"),
+            bg="white",
+            fg="#6b7280"
+        ).pack(anchor="w", padx=20, pady=(8, 5))
+
+        entry = tk.Entry(
+            self.form,
+            font=("Arial", 10),
+            bd=1,
+            relief="solid",
+            highlightthickness=0
+        )
+        entry.pack(fill="x", padx=20, ipady=8)
+
+        return entry
+
+    def add_dropdown(self, label_text, variable, choices):
+        tk.Label(
+            self.form,
+            text=label_text,
+            font=("Arial", 9, "bold"),
+            bg="white",
+            fg="#6b7280"
+        ).pack(anchor="w", padx=20, pady=(10, 5))
+
+        ttk.Combobox(
+            self.form,
+            textvariable=variable,
+            values=choices,
+            state="readonly",
+            width=24
+        ).pack(fill="x", padx=20)
+
+    def add_button(self, text, command, bg, fg):
+        button = tk.Label(
+            self.form,
+            text=text,
+            bg=bg,
+            fg=fg,
+            font=("Arial", 10, "bold"),
+            cursor="hand2",
+            pady=10
+        )
+        button.pack(fill="x", padx=20, pady=5)
+        button.bind("<Button-1>", lambda event: command())
+
+    def build_tasks_section(self):
+        top = tk.Frame(self.task_area, bg="white")
+        top.pack(fill="x", padx=18, pady=(18, 12))
+
+        tk.Label(
+            top,
+            text="Tasks",
+            font=("Arial", 16, "bold"),
+            bg="white"
+        ).pack(side="left")
+
+        status_box = ttk.Combobox(
+            top,
+            textvariable=self.status_filter,
+            values=["All", "Open", "Overdue", "Completed"],
+            state="readonly",
+            width=12
+        )
+        status_box.pack(side="right")
+        status_box.bind("<<ComboboxSelected>>", lambda event: self.refresh_tasks())
+
+        self.search_entry = tk.Entry(
+            top,
+            font=("Arial", 10),
+            fg="#9ca3af",
+            width=23
+        )
+        self.search_entry.pack(side="right", padx=(0, 10), ipady=5)
+        self.search_entry.insert(0, "Search task...")
+
+        self.search_entry.bind("<FocusIn>", self.clear_search_placeholder)
+        self.search_entry.bind("<FocusOut>", self.show_search_placeholder)
+        self.search_entry.bind("<KeyRelease>", lambda event: self.refresh_tasks())
+
+        table_box = tk.Frame(self.task_area, bg="white")
+        table_box.pack(fill="both", expand=True, padx=18, pady=(0, 18))
+
+        columns = ("task", "course", "due", "priority", "status")
+
+        self.tree = ttk.Treeview(
+            table_box,
+            columns=columns,
+            show="headings"
+        )
+
+        self.tree.heading("task", text="Task", anchor="w")
+        self.tree.heading("course", text="Course", anchor="w")
+        self.tree.heading("due", text="Due", anchor="w")
+        self.tree.heading("priority", text="Priority", anchor="w")
+        self.tree.heading("status", text="Status", anchor="w")
+
+        self.tree.column("task", width=230, minwidth=180, stretch=True, anchor="w")
+        self.tree.column("course", width=150, minwidth=120, stretch=True, anchor="w")
+        self.tree.column("due", width=110, minwidth=100, stretch=True, anchor="w")
+        self.tree.column("priority", width=100, minwidth=90, stretch=True, anchor="w")
+        self.tree.column("status", width=110, minwidth=100, stretch=True, anchor="w")
+
+        self.tree.pack(fill="both", expand=True)
+
+        # Vertical lines between the columns.
+        # Their positions come from the table's real column widths,
+        # so they stay aligned even when the window is resized.
+        divider_lines = []
+
+        for _ in range(4):
+            line = ttk.Separator(table_box, orient="vertical")
+            divider_lines.append(line)
+
+        def move_dividers(event=None):
+            widths = [
+                self.tree.column("task", "width"),
+                self.tree.column("course", "width"),
+                self.tree.column("due", "width"),
+                self.tree.column("priority", "width")
+            ]
+
+            x = 2
+            for line, width in zip(divider_lines, widths):
+                x += width
+                line.place(x=x, y=0, relheight=1)
+                line.lift()
+
+        self.tree.bind(
+            "<Configure>",
+            lambda event: (
+                self.root.after_idle(move_dividers),
+                self.root.after_idle(self.draw_status_labels)
+            )
+        )
+        self.tree.bind(
+            "<<TreeviewSelect>>",
+            lambda event: self.root.after_idle(self.draw_status_labels)
+        )
+
+        self.root.after_idle(move_dividers)
+
+    def draw_status_labels(self):
+        for label in self.status_labels:
+            label.destroy()
+
+        self.status_labels = []
+        selected = set(self.tree.selection())
+
+        for item in self.tree.get_children():
+            box = self.tree.bbox(item, "status")
+
+            if not box:
+                continue
+
+            x, y, width, height = box
+            status = self.tree.set(item, "status")
+
+            if status == "Overdue":
+                color = "#b91c1c"
+            elif status == "Completed":
+                color = "#166534"
+            else:
+                color = "#1f2937"
+
+            background = "#dbeafe" if item in selected else "white"
+
+            label = tk.Label(
+                self.tree,
+                text=status,
+                font=("Arial", 13),
+                fg=color,
+                bg=background,
+                anchor="w",
+                padx=2
+            )
+
+            label.place(
+                x=x + 2,
+                y=y + 1,
+                width=max(width - 4, 1),
+                height=max(height - 2, 1)
+            )
+
+            label.bind(
+                "<Button-1>",
+                lambda event, row=item: (
+                    self.tree.selection_set(row),
+                    self.tree.focus(row)
+                )
+            )
+
+            self.status_labels.append(label)
+
+    def clear_search_placeholder(self, event):
+        if self.search_entry.get() == "Search task...":
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.config(fg="#1f2937")
+
+    def show_search_placeholder(self, event):
+        if self.search_entry.get().strip() == "":
+            self.search_entry.insert(0, "Search task...")
+            self.search_entry.config(fg="#9ca3af")
+
+    def load_tasks(self):
+        try:
+            with open(DATA_FILE, "r") as file:
+                return json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def save_tasks(self):
+        with open(DATA_FILE, "w") as file:
+            json.dump(self.task_list, file, indent=4)
+
+    def add_task(self):
+        task = self.task_entry.get().strip()
+        course = self.course_entry.get().strip()
+        due_date = self.date_entry.get().strip()
+
+        if not task or not course or not due_date:
+            messagebox.showwarning("Missing information", "Please fill in all fields.")
+            return
+
+        try:
+            datetime.strptime(due_date, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Invalid date", "Use YYYY-MM-DD.")
+            return
+
+        self.task_list.append({
+            "task": task,
+            "course": course,
+            "due": due_date,
+            "priority": self.priority_choice.get(),
+            "status": "Open"
+        })
+
+        self.save_tasks()
+
+        self.task_entry.delete(0, tk.END)
+        self.course_entry.delete(0, tk.END)
+        self.date_entry.delete(0, tk.END)
+
+        self.refresh_tasks()
+
+    def get_selected_task(self):
+        selected = self.tree.selection()
+
+        if not selected:
+            messagebox.showinfo("No task selected", "Select a task first.")
+            return None
+
+        return int(self.tree.item(selected[0], "text"))
+
+    def mark_complete(self):
+        index = self.get_selected_task()
+
+        if index is not None:
+            self.task_list[index]["status"] = "Completed"
+            self.save_tasks()
+            self.refresh_tasks()
+
+    def delete_task(self):
+        index = self.get_selected_task()
+
+        if index is not None:
+            self.task_list.pop(index)
+            self.save_tasks()
+            self.refresh_tasks()
+
+    def reset_all_tasks(self):
+        if not self.task_list:
+            messagebox.showinfo("No tasks", "There are no tasks to delete.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Reset all tasks",
+            "Are you sure you want to delete all tasks?"
+        )
+
+        if confirm:
+            self.task_list.clear()
+            self.save_tasks()
+            self.refresh_tasks()
+
+    def get_search_text(self):
+        text = self.search_entry.get().strip().lower()
+
+        if text == "search task...":
+            return ""
+
+        return text
+
+    def refresh_tasks(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        search = self.get_search_text()
+        status_filter = self.status_filter.get()
+        today = datetime.now().date()
+
+        shown_tasks = []
+
+        for index, task in enumerate(self.task_list):
+            search_match = (
+                search in task["task"].lower()
+                or search in task["course"].lower()
+            )
+
+            due_date = datetime.strptime(task["due"], "%Y-%m-%d").date()
+
+            if task["status"] == "Completed":
+                current_status = "Completed"
+            elif due_date < today:
+                current_status = "Overdue"
+            else:
+                current_status = "Open"
+
+            filter_match = (
+                status_filter == "All"
+                or current_status == status_filter
+            )
+
+            if search_match and filter_match:
+                shown_tasks.append((index, task))
+
+        shown_tasks.sort(key=lambda item: item[1]["due"])
+
+        for index, task in shown_tasks:
+
+            if task["priority"] == "High":
+                priority_label = "🔴 High"
+            elif task["priority"] == "Medium":
+                priority_label = "🟡 Medium"
+            else:
+                priority_label = "🟢 Low"
+
+            if task["status"] == "Completed":
+                status_label = "Completed"
+            else:
+                due = datetime.strptime(task["due"], "%Y-%m-%d").date()
+
+                if due < today:
+                    status_label = "Overdue"
+                else:
+                    status_label = "Open"
+
+            self.tree.insert(
+                "",
+                "end",
+                text=str(index),
+                values=(
+                    task["task"],
+                    task["course"],
+                    task["due"],
+                    priority_label,
+                    status_label
+                )
+            )
+
+        self.root.after_idle(self.draw_status_labels)
+        self.update_stats()
+
+    def update_stats(self):
+        total = len(self.task_list)
+        completed = 0
+        open_tasks = 0
+        due_soon = 0
+        today = datetime.now().date()
+
+        for task in self.task_list:
+            if task["status"] == "Completed":
+                completed += 1
+            else:
+                due = datetime.strptime(task["due"], "%Y-%m-%d").date()
+                days_until_due = (due - today).days
+
+                if days_until_due >= 0:
+                    open_tasks += 1
+
+                if 0 <= days_until_due <= 7:
+                    due_soon += 1
+
+        self.total_label.config(text=str(total))
+        self.open_label.config(text=str(open_tasks))
+        self.completed_label.config(text=str(completed), fg="#166534")
+        self.due_label.config(text=str(due_soon))
+
+
+root = tk.Tk()
+app = StudyDesk(root)
+root.mainloop()
