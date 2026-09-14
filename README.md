@@ -10,3 +10,5 @@ A Python desktop app for keeping track of school tasks and deadlines.
 - Automatically detect overdue tasks using the computer's current date
 - Save tasks in a JSON file
 - Show total, open, completed, and due-soon counts
+
+- Built with Python and Tkinter.
